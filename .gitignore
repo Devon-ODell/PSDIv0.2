@@ -1,0 +1,37 @@
+
+
+# Output of the go coverage tool, specifically when run with the
+# -o option to specify an output file.
+*.out
+
+# Dependency directories (if you're not using Go modules or if they are vendored)
+# vendor/
+
+# Go Module files (if you want to exclude them, though typically go.sum is committed)
+# go.sum
+
+# Environment configuration files
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+
+# Log files
+*.log
+logs/
+
+ld directory (if you use one)
+/build/
+/dist/
+
+# Output files from the current PSDI project (example)
+output/
+
+# Debugger files (e.g., Delve)
+__debug_bin
+
+# Other common ignores
+.history/

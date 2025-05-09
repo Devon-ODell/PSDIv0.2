@@ -1,0 +1,24 @@
+# Stage 1: Build
+FROM golang:1.24-alpine AS builder
+WORKDIR /PSDIv0.2
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Build targeting the main package in cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go-app ./cmd/server
+
+# Stage 2: Run
+FROM ubuntu:24.04.2
+WORKDIR /app
+# Create a non-root user for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Copy only the compiled binary from the builder stage
+COPY --from=builder /server /PSDIv0.2/server
+# Set ownership and permissions
+RUN chown appuser:appgroup /PSDIv0.2/server && chmod +x /PSDIv0.2/server
+# Switch to non-root user
+USER appuser
+# Expose the port the Go app will listen on (adjust if necessary)
+EXPOSE 8080
+# Run the application
+ENTRYPOINT ["/app/go-app"]
