@@ -3,14 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+
+	//"fmt"
 	"log"
 	"os"
 	"time"
 
 	// Use your project's actual module path for internal packages
-	"github.com/Devon-ODell/PSDI/internal/config"
-	"github.com/Devon-ODell/PSDI/internal/paycor"
-	// "github.com/Devon-ODell/PSDI/internal/jira" // Placeholder for future Jira module
+	"github.com/Devon-ODell/PSDIv01/internal/config"
+	"github.com/Devon-ODell/PSDIv01/internal/paycor"
+	// "github.com/Devon-ODell/PSDIv01/internal/jira" // Placeholder for future Jira module
 )
 
 func main() {

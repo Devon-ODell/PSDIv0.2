@@ -2,116 +2,91 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
-	"strconv"
-	"time"
+	"strings"
+
+	"github.com/joho/godotenv" // Added for .env loading convenience
 )
 
 // Config holds all configuration for the application
 type Config struct {
-	Version  string
-	Server   ServerConfig
-	Database DatabaseConfig
-	Jira     JiraConfig
-	Paycor   PaycorConfig
-	Worker   WorkerConfig
-}
-
-// ServerConfig holds HTTP server configuration
-type ServerConfig struct {
-	Port            string
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ShutdownTimeout time.Duration
-}
-
-// DatabaseConfig holds database connection configuration
-type DatabaseConfig struct {
-	Host     string
-	Port     string
-	Name     string
-	User     string
-	Password string
-	SSLMode  string
-}
-
-// JiraConfig holds Jira API configuration
-type JiraConfig struct {
-	BaseURL     string
-	APIToken    string
-	UserEmail   string
-	AssetObject string
+	Paycor PaycorConfig
+	// Add other configs like JiraConfig if needed for future modular parts
+	// For now, we only strictly need PaycorConfig for the current task.
+	// Jira JiraConfig
 }
 
 // PaycorConfig holds Paycor API configuration
 type PaycorConfig struct {
-	ClientID     string
-	ClientSecret string
-	BaseURL      string
+	ClientID        string
+	ClientSecret    string
+	SubscriptionKey string
+	RefreshToken    string
+	TokenURLBase    string   // e.g., https://apis-sandbox.paycor.com/sts/v1/token
+	APIBaseURL      string   // e.g., https://apis-sandbox.paycor.com/v1
+	LegalEntityID   string   // The specific Legal Entity ID to fetch employees for
+	Scopes          []string // Optional scopes for OAuth2
+	OutputFilePath  string   // Optional: Path to save the JSON output
 }
 
-// WorkerConfig holds background worker configuration
-type WorkerConfig struct {
-	IntervalSeconds int
-	MaxRetries      int
-	RetryDelay      time.Duration
-}
+// JiraConfig (placeholder for modularity)
+// type JiraConfig struct {
+// 	BaseURL  string
+// 	APIToken string
+// 	// ... other Jira specific configs
+// }
 
-// Load loads configuration from environment variables
+// Load loads configuration from environment variables.
+// For this focused task, it primarily loads Paycor config.
 func Load() (*Config, error) {
-	// Set defaults
-	config := &Config{
-		Version: getEnv("APP_VERSION", "1.0.0"),
-		Server: ServerConfig{
-			Port:            getEnv("SERVER_PORT", "8080"),
-			ReadTimeout:     getEnvAsDuration("SERVER_READ_TIMEOUT", "15s"),
-			WriteTimeout:    getEnvAsDuration("SERVER_WRITE_TIMEOUT", "15s"),
-			ShutdownTimeout: getEnvAsDuration("SERVER_SHUTDOWN_TIMEOUT", "30s"),
-		},
-		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "5432"),
-			Name:     getEnv("DB_NAME", "paycorjira"),
-			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", "postgres"),
-			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
-		},
-		Jira: JiraConfig{
-			BaseURL:     getEnv("JIRA_BASE_URL", ""),
-			APIToken:    getEnv("JIRA_API_TOKEN", ""),
-			UserEmail:   getEnv("JIRA_USER_EMAIL", ""),
-			AssetObject: getEnv("JIRA_ASSET_OBJECT", "Employee"),
-		},
-		Paycor: PaycorConfig{
-			ClientID:     getEnv("PAYCOR_CLIENT_ID", ""),
-			ClientSecret: getEnv("PAYCOR_CLIENT_SECRET", ""),
-			BaseURL:      getEnv("PAYCOR_BASE_URL", "https://apis.paycor.com"),
-		},
-		Worker: WorkerConfig{
-			IntervalSeconds: getEnvAsInt("WORKER_INTERVAL_SECONDS", "30"),
-			MaxRetries:      getEnvAsInt("WORKER_MAX_RETRIES", "5"),
-			RetryDelay:      getEnvAsDuration("WORKER_RETRY_DELAY", "5m"),
-		},
+	// Attempt to load .env file from the current directory or parent directories.
+	// Useful for local development.
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("INFO: [Config] No .env file found or error loading it: %v. Relying on OS environment variables if set.", err)
 	}
 
-	// Validate required configuration
-	if config.Jira.BaseURL == "" {
-		return nil, fmt.Errorf("JIRA_BASE_URL is required")
-	}
-	if config.Jira.APIToken == "" {
-		return nil, fmt.Errorf("JIRA_API_TOKEN is required")
-	}
-	if config.Jira.UserEmail == "" {
-		return nil, fmt.Errorf("JIRA_USER_EMAIL is required")
-	}
-	if config.Paycor.ClientID == "" {
-		return nil, fmt.Errorf("PAYCOR_CLIENT_ID is required")
-	}
-	if config.Paycor.ClientSecret == "" {
-		return nil, fmt.Errorf("PAYCOR_CLIENT_SECRET is required")
+	paycorCfg := PaycorConfig{
+		ClientID:        getEnv("PAYCOR_CLIENT_ID", ""),
+		ClientSecret:    getEnv("PAYCOR_CLIENT_SECRET", ""),
+		SubscriptionKey: getEnv("PAYCOR_SUBSCRIPTION_KEY", ""),
+		RefreshToken:    getEnv("PAYCOR_REFRESH_TOKEN", ""),
+		TokenURLBase:    getEnv("PAYCOR_TOKEN_BASE_URL", ""),
+		APIBaseURL:      getEnv("PAYCOR_BASE_URL", ""),
+		LegalEntityID:   getEnv("PAYCOR_LEGAL_ENTITY_ID", ""),
+		OutputFilePath:  getEnv("PAYCOR_OUTPUT_FILE_PATH", "paycor_employees.json"), // Default output file path
 	}
 
-	return config, nil
+	// Validate Paycor configuration
+	var missingVars []string
+	if paycorCfg.ClientID == "" {
+		missingVars = append(missingVars, "PAYCOR_CLIENT_ID")
+	}
+	if paycorCfg.ClientSecret == "" {
+		missingVars = append(missingVars, "PAYCOR_CLIENT_SECRET")
+	}
+	if paycorCfg.SubscriptionKey == "" {
+		missingVars = append(missingVars, "PAYCOR_SUBSCRIPTION_KEY")
+	}
+	if paycorCfg.RefreshToken == "" {
+		missingVars = append(missingVars, "PAYCOR_REFRESH_TOKEN")
+	}
+	if paycorCfg.TokenURLBase == "" {
+		missingVars = append(missingVars, "PAYCOR_TOKEN_URL_BASE")
+	}
+	if paycorCfg.APIBaseURL == "" {
+		missingVars = append(missingVars, "PAYCOR_API_BASE_URL")
+	}
+	if paycorCfg.LegalEntityID == "" {
+		missingVars = append(missingVars, "PAYCOR_LEGAL_ENTITY_ID")
+	}
+
+	if len(missingVars) > 0 {
+		return nil, fmt.Errorf("missing required Paycor environment variable(s): %s", strings.Join(missingVars, ", "))
+	}
+
+	return &Config{Paycor: paycorCfg}, nil
 }
 
 // Helper functions for environment variables
@@ -122,20 +97,5 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvAsInt(key, fallback string) int {
-	valueStr := getEnv(key, fallback)
-	value, err := strconv.Atoi(valueStr)
-	if err != nil {
-		value, _ = strconv.Atoi(fallback)
-	}
-	return value
-}
-
-func getEnvAsDuration(key, fallback string) time.Duration {
-	valueStr := getEnv(key, fallback)
-	value, err := time.ParseDuration(valueStr)
-	if err != nil {
-		value, _ = time.ParseDuration(fallback)
-	}
-	return value
-}
+// getEnvAsInt and getEnvAsDuration can be added back if other config sections need them.
+// For this specific task, they are not immediately required by PaycorConfig.
