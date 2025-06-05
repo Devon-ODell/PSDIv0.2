@@ -12,7 +12,7 @@ import (
 
 	// Assuming your config package is correctly pathed if this client is used elsewhere
 	// For direct use by cmd/server/main.go, config.PaycorConfig will be passed in.
-	// "github.com/Devon-ODell/PSDIv01/internal/config"
+
 	"golang.org/x/oauth2"
 )
 
