@@ -8,8 +8,8 @@
 # vendor/
 
 # Go Module files (if you want to exclude them, though typically go.sum is committed)
-# go.sum
-
+go.sum
+go.mod
 # Environment configuration files
 .env
 
