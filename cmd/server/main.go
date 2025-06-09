@@ -10,9 +10,8 @@ import (
 	"time"
 
 	// Use your project's actual module path for internal packages
-	"github.com/Devon-ODell/PSDIv01/internal/config"
-	"github.com/Devon-ODell/PSDIv01/internal/paycor"
-	// "github.com/Devon-ODell/PSDIv01/internal/jira" // Placeholder for future Jira module
+	"github.com/Devon-ODell/PSDIv0.2/internal/config"
+	"github.com/Devon-ODell/PSDIv0.2/internal/paycor"
 )
 
 func main() {
@@ -27,7 +26,7 @@ func main() {
 	}
 	log.Println("INFO: Configuration loaded successfully.")
 	log.Printf("DEBUG: Paycor Config: ClientID=%s..., APIBaseURL=%s, LegalEntityID=%s, OutputFile=%s",
-		safeSubstring(cfg.Paycor.ClientID, 5), cfg.Paycor.APIBaseURL, cfg.Paycor.LegalEntityID, cfg.Paycor.OutputFilePath)
+		safeSubstring(cfg.Paycor.PaycorClientID, 5), cfg.Paycor.PaycorAPIBaseURL, cfg.Paycor.PaycorLegalEntityID, cfg.LogFilePath)
 
 	// Initialize Paycor client
 	// Pass the Paycor-specific config struct to the client
@@ -56,7 +55,7 @@ func main() {
 	log.Printf("INFO: Employee data successfully marshalled to JSON (%d bytes).", len(jsonData))
 
 	// --- Step 3: Save JSON data to a file ---
-	outputFilePath := cfg.Paycor.OutputFilePath
+	outputFilePath := cfg.LogFilePath
 	log.Printf("INFO: Attempting to save JSON data to file: %s", outputFilePath)
 	err = os.WriteFile(outputFilePath, jsonData, 0644) // rw-r--r-- permissions
 	if err != nil {

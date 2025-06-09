@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 // PaycorConfig holds Paycor API configuration
 
 // Employee struct is designed to be flexible for "include=All".
@@ -48,6 +50,68 @@ type Employee struct {
 
 	// Catch-all for any other properties not explicitly defined
 	AdditionalProperties map[string]interface{} `json:"-"` // Use json.RawMessage or custom unmarshal if needed
+}
+
+// Custom UnmarshalJSON to handle additional properties
+func (e *Employee) UnmarshalJSON(data []byte) error {
+	// Temporary struct to unmarshal known fields
+	type Alias Employee
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(e),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Unmarshal all data into a map to find extra fields
+	var allData map[string]interface{}
+	if err := json.Unmarshal(data, &allData); err != nil {
+		return err
+	}
+
+	// Remove known fields from allData to isolate additional properties
+	delete(allData, "id")
+	delete(allData, "legalEntityId")
+	delete(allData, "firstName")
+	delete(allData, "lastName")
+	delete(allData, "middleName")
+	delete(allData, "preferredName")
+	delete(allData, "personalEmail")
+	delete(allData, "workEmail")
+	delete(allData, "lastModifiedDate")
+	delete(allData, "department")
+	delete(allData, "locationName")
+	delete(allData, "addresses")
+	delete(allData, "birthDate")
+	delete(allData, "businessUnit")
+	delete(allData, "callInData")
+	delete(allData, "citizenship")
+	delete(allData, "compensation")
+	delete(allData, "departmentAndPosition")
+	delete(allData, "directDeposit")
+	delete(allData, "emergencyContacts")
+	delete(allData, "employmentDates")
+	delete(allData, "employmentStatus")
+	delete(allData, "ethnicityRace")
+	delete(allData, "gender")
+	delete(allData, "licenses")
+	delete(allData, "personIdentification")
+	delete(allData, "phones")
+	delete(allData, "position")
+	delete(allData, "status")
+	delete(allData, "taxes")
+	delete(allData, "union")
+	delete(allData, "veteran")
+	delete(allData, "workLocation")
+
+	if len(allData) > 0 {
+		e.AdditionalProperties = allData
+	}
+
+	return nil
 }
 
 // JiraConfig holds Jira API configuration

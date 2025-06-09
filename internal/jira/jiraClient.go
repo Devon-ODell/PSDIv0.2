@@ -1,0 +1,95 @@
+// internal/jira/jiraClient.go
+
+package jira
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/Devon-ODell/PSDIv0.2/internal/config"
+	"github.com/Devon-ODell/PSDIv0.2/internal/models"
+)
+
+// Client manages communication with the Jira API.
+type Client struct {
+	cfg        config.JiraConfig
+	httpClient *http.Client
+}
+
+// NewClient creates a new Jira API client.
+func NewClient(cfg config.JiraConfig) (*Client, error) {
+	if cfg.JiraAdminEmail == "" || cfg.JiraOrgAPIKey == "" || cfg.JiraSiteName == "" || cfg.JiraWorkspaceID == "" {
+		return nil, fmt.Errorf("Jira client configuration is incomplete (Email, API Key, Site Name, Workspace ID are required)")
+	}
+
+	return &Client{
+		cfg: cfg,
+		httpClient: &http.Client{
+			Timeout: 60 * time.Second,
+		},
+	}, nil
+}
+
+// GetAllEmployeeAssets fetches all objects of the configured Employee type from Jira Assets.
+func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAsset, error) {
+	// Construct the AQL (Assets Query Language) query to find all "Employee" objects.
+	// We use the configured object type name to make it flexible.
+	aql := fmt.Sprintf(`objectType = "%s"`, c.cfg.JiraEmployeeObjectTypeName)
+
+	// Jira Assets search endpoint
+	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
+	if err != nil {
+		return nil, fmt.Errorf("invalid Jira site name: %w", err)
+	}
+	apiURL = apiURL.JoinPath(
+		"rest/assets/1.0/aql/objects",
+	)
+
+	q := apiURL.Query()
+	q.Set("aql", aql)
+	q.Set("resultsPerPage", "100") // Set a reasonable page size
+	apiURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Jira API request: %w", err)
+	}
+
+	// Set required headers for Jira Cloud API
+	req.SetBasicAuth(c.cfg.JiraAdminEmail, c.cfg.JiraOrgAPIKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Printf("INFO: [JiraClient] Fetching employee assets with AQL: %s", aql)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute Jira API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Jira API returned non-200 status: %s, body: %s", resp.Status, string(bodyBytes))
+	}
+
+	// Here you would unmarshal the response and map it to your internal models.
+	// The Jira Assets API response can be complex. You will need to define structs
+	// to match the response and then map the attributes to your `models.EmployeeAsset`.
+	// As a placeholder, we'll just log the body.
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("INFO: [JiraClient] Successfully received data from Jira. Body length: %d bytes", len(bodyBytes))
+	log.Printf("DEBUG: [JiraClient] Response Body: %s", string(bodyBytes))
+
+	// TODO: Implement the unmarshalling and mapping from the Jira API response
+	// to the []models.EmployeeAsset slice. This will involve creating structs that
+	// mirror Jira's JSON response and iterating through the results.
+
+	return []models.EmployeeAsset{}, nil // Return an empty slice for now
+}

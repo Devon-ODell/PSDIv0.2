@@ -1,16 +1,11 @@
 package config
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"strings"
-
-	"github.com/joho/godotenv" // Added for .env loading convenience
 )
 
-// --- Configuration Struct (Combined for Paycor and Jira) ---
-type AppConfig struct {
+type PaycorConfig struct {
 	// Paycor Configuration
 	PaycorClientID               string
 	PaycorClientSecret           string
@@ -20,9 +15,11 @@ type AppConfig struct {
 	PaycorAPIBaseURL             string
 	PaycorLegalEntityID          string
 	PaycorScopes                 []string
+}
 
+type JiraConfig struct {
 	// Jira Configuration
-	JiraAssetsURL                    string // Base URL for Jira (e.g., https://your-domain.atlassian.net)
+	JiraAssetsURL              string // Base URL for Jira (e.g., https://your-domain.atlassian.net)
 	JiraAdminEmail             string
 	JiraOrgAPIKey              string
 	JiraSiteName               string // e.g., your-company.atlassian.net (used for workspace ID discovery & standard API calls)
@@ -38,19 +35,13 @@ type AppConfig struct {
 	JiraLinkTypeNameToAsset       string // Name of the issue link type (e.g., "Relates to", "Impacts")
 	JiraLinkTypeIDToAsset         string // Discovered or set via env
 	JiraAssetObjectKeyCustomField string // Custom field ID for storing Asset Object Key on Jira issue (e.g. "customfield_10050")
+}
 
-	// Jira Attribute IDs for Employee Object (CRITICAL - map these in .env)
-	JiraAttrIDPaycorSystemID string
-	JiraAttrIDEmployeeID     string
-	JiraAttrIDFirstName      string
-	JiraAttrIDLastName       string
-	JiraAttrIDEmail          string
-	JiraAttrIDDepartment     string
-	JiraAttrIDJobTitle       string
-	JiraAttrIDLocation       string
-	JiraAttrIDStartDate      string
-	// Add other attribute IDs as needed
-
+// --- Configuration Struct (Combined for Paycor and Jira) ---
+type AppConfig struct {
+	// Paycor Configuration
+	Paycor PaycorConfig // Embedded PaycorConfig struct for modularity
+	Jira   JiraConfig   // Embedded JiraConfig struct for modularity
 	// General
 	LogFilePath string
 }
@@ -65,80 +56,90 @@ type AppConfig struct {
 // Load loads configuration from environment variables.
 // For this focused task, it primarily loads Paycor config.
 func Load() (*AppConfig, error) {
-	// Attempt to load .env file from the current directory or parent directories.
-	// Useful for local development.
-	err := godotenv.Load()
-	if err != nil {
-		log.Printf("INFO: [Config] No .env file found or error loading it: %v. Relying on OS environment variables if set.", err)
-	}
+	cfg := &AppConfig{
+		Paycor: PaycorConfig{
+			PaycorClientID:               getEnv("PAYCOR_CLIENT_ID", ""),
+			PaycorClientSecret:           getEnv("PAYCOR_CLIENT_SECRET", ""),
+			PaycorOcpApimSubscriptionKey: getEnv("PAYCOR_SUBSCRIPTION_KEY", ""),
+			PaycorRefreshToken:           getEnv("PAYCOR_REFRESH_TOKEN", ""),
+			PaycorTokenURLBase:           getEnv("PAYCOR_TOKEN_BASE_URL", ""),
+			PaycorAPIBaseURL:             getEnv("PAYCOR_BASE_URL", ""),
+			PaycorLegalEntityID:          getEnv("PAYCOR_LEGAL_ENTITY_ID", ""),
+		},
 
-	paycorCfg := AppConfig{
-		PaycorClientID:        getEnv("PAYCOR_CLIENT_ID", ""),
-		PaycorClientSecret:    getEnv("PAYCOR_CLIENT_SECRET", ""),
-		PaycorOcpApimSubscriptionKey: getEnv("PAYCOR_SUBSCRIPTION_KEY", ""),
-		PaycorRefreshToken:    getEnv("PAYCOR_REFRESH_TOKEN", ""),
-		PaycorTokenURLBase:    getEnv("PAYCOR_TOKEN_BASE_URL", ""),
-		PaycorAPIBaseURL:      getEnv("PAYCOR_BASE_URL", ""),
-		PaycorLegalEntityID:   getEnv("PAYCOR_LEGAL_ENTITY_ID", ""),
-		LogFilePath:  getEnv("LOG_FILE_PATH", "paycor_employees.json"), // Default output file path
+		Jira: JiraConfig{
+			JiraSiteName:                  getEnv("JIRA_ORG_DOMAIN", ""),
+			JiraWorkspaceID:               getEnv("JIRA_WORKSPACE_ID", ""),
+			JiraAdminEmail:                getEnv("JIRA_ADMIN_EMAIL", ""),
+			JiraOrgAPIKey:                 getEnv("JIRA_ORG_API_KEY", ""),
+			JiraAssetsURL:                 getEnv("JIRA_ASSETS_URL", ""),
+			JiraObjectSchemaKey:           getEnv("JIRA_OBJECT_SCHEMA_KEY", ""),
+			JiraAssetObjectKeyCustomField: getEnv("JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID", ""),
+		},
+		// Initialize other AppConfig fields
+		// DatabaseURL: getEnv("DATABASE_URL", ""),
+		// ServerPort:  getEnv("SERVER_PORT", "8080"), // Default port
 	}
-
-	jiraCfg := AppConfig{
-		JiraSiteName:        getEnv("JIRA_ORG_DOMAIN", ""),
-		JiraWorkspaceID:    getEnv("JIRA_WORKSPACE_ID", ""),
-		JiraAdminEmail: getEnv("JIRA_ADMIN_EMAIL", ""),
-		JiraOrgAPIKey:    getEnv("JIRA_ORG_API_KEY", ""),
-		JiraAssetsURL:    getEnv("JIRA_ASSETS_URL", ""),
-		JiraObjectSchemaKey:      getEnv("JIRA_OBJECT_SCHEMA_KEY", ""),
-		JiraAssetObjectKeyCustomField:   getEnv("JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID", ""),
-		LogFilePath:  getEnv("LOG_FILE_PATH", "jira_assets.json"), // Default output file path
-	}
-
 	// Validate Paycor configuration
-	var missingVars []string
-	if paycorCfg.PaycorClientID == "" {
-		missingVars = append(missingVars, "PAYCOR_CLIENT_ID")}
-	if paycorCfg.PaycorClientSecret == "" {
-		missingVars = append(missingVars, "PAYCOR_CLIENT_SECRET")}
-	if paycorCfg.PaycorOcpApimSubscriptionKey == "" {
-		missingVars = append(missingVars, "PAYCOR_SUBSCRIPTION_KEY")}
-	if paycorCfg.PaycorRefreshToken == "" {
-		missingVars = append(missingVars, "PAYCOR_REFRESH_TOKEN")}
-	if paycorCfg.PaycorTokenURLBase == "" {
-		missingVars = append(missingVars, "PAYCOR_TOKEN_URL_BASE")}
-	if paycorCfg.PaycorAPIBaseURL == "" {
-		missingVars = append(missingVars, "PAYCOR_API_BASE_URL")}
-	if paycorCfg.PaycorLegalEntityID == "" {
-		missingVars = append(missingVars, "PAYCOR_LEGAL_ENTITY_ID")}
-	if jiraCfg.JiraSiteName == "" {
-		missingVars = append(missingVars, "JIRA_ORG_DOMAIN")}
-	if jiraCfg.JiraWorkspaceID == "" {
-		missingVars = append(missingVars, "JIRA_WORKSPACE_ID")}
-	if jiraCfg.JiraAdminEmail == "" {
-		missingVars = append(missingVars, "JIRA_ADMIN_EMAIL")}
-	if jiraCfg.JiraOrgAPIKey == "" {
-		missingVars = append(missingVars, "JIRA_ORG_API_KEY")}
-	if jiraCfg.JiraAssetsURL == "" {
-		missingVars = append(missingVars, "JIRA_ASSETS_URL")}
-	if jiraCfg.JiraObjectSchemaKey == "" {
-		missingVars = append(missingVars, "JIRA_OBJECT_SCHEMA_KEY")}
-	if jiraCfg.JiraAssetObjectKeyCustomField == "" {
-		missingVars = append(missingVars, "JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID")
-
-	if len(missingVars) > 0 {
-		return nil, fmt.Errorf("missing required Paycor environment variable(s): %s", strings.Join(missingVars, ", "))
+	if cfg.Paycor.PaycorClientID == "" {
+		log.Println("CONFIG WARNING: PAYCOR_CLIENT_ID environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorClientSecret == "" {
+		log.Println("CONFIG WARNING: PAYCOR_CLIENT_SECRET environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorOcpApimSubscriptionKey == "" {
+		log.Println("CONFIG WARNING: PAYCOR_SUBSCRIPTION_KEY environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorRefreshToken == "" {
+		log.Println("CONFIG WARNING: PAYCOR_REFRESH_TOKEN environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorTokenURLBase == "" {
+		log.Println("CONFIG WARNING: PAYCOR_TOKEN_BASE_URL environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorAPIBaseURL == "" {
+		log.Println("CONFIG WARNING: PAYCOR_BASE_URL environment variable is not set.")
+	}
+	if cfg.Paycor.PaycorLegalEntityID == "" {
+		log.Println("CONFIG WARNING: PAYCOR_LEGAL_ENTITY_ID environment variable is not set.")
+	}
+	if cfg.Jira.JiraSiteName == "" {
+		log.Println("CONFIG WARNING: JIRA_ORG_DOMAIN environment variable is not set.")
+	}
+	if cfg.Jira.JiraWorkspaceID == "" {
+		log.Println("CONFIG WARNING: JIRA_WORKSPACE_ID environment variable is not set.")
+	}
+	if cfg.Jira.JiraAdminEmail == "" {
+		log.Println("CONFIG WARNING: JIRA_ADMIN_EMAIL environment variable is not set.")
+	}
+	if cfg.Jira.JiraOrgAPIKey == "" {
+		log.Println("CONFIG WARNING: JIRA_ORG_API_KEY environment variable is not set.")
+	}
+	if cfg.Jira.JiraAssetsURL == "" {
+		log.Println("CONFIG WARNING: JIRA_ASSETS_URL environment variable is not set.")
+	}
+	if cfg.Jira.JiraObjectSchemaKey == "" {
+		log.Println("CONFIG WARNING: JIRA_OBJECT_SCHEMA_KEY environment variable is not set.")
+	}
+	if cfg.Jira.JiraAssetObjectKeyCustomField == "" {
+		log.Println("CONFIG WARNING: JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID environment variable is not set.")
 	}
 
-	
-	return &AppConfig{Paycor: paycorCfg}, nil
+	return cfg, nil
 }
 
-// Helper functions for environment variables
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
+func getEnv(key string, defaultValue string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		if defaultValue == "" {
+			// If there's no default and the env var is not set, it might be an issue or intended.
+			// Log a general warning for unset variables without defaults if that's desired behavior.
+			// log.Printf("CONFIG INFO: Environment variable %s not set, no default provided.", key)
+		} else {
+			log.Printf("CONFIG INFO: Environment variable %s not set, using default value.", key)
+		}
+		return defaultValue
 	}
-	return fallback
+	return value
 }
 
 // getEnvAsInt and getEnvAsDuration can be added back if other config sections need them.
