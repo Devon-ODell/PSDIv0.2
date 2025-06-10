@@ -23,7 +23,7 @@ import (
 
 // EmployeesAPIResponse models the expected API response structure when fetching employees.
 type EmployeesAPIResponse struct {
-	Items             []models.Employee `json:"items"`
+	Records           []models.Employee `json:"records"`
 	ContinuationToken string            `json:"continuationToken"`
 }
 
@@ -172,7 +172,6 @@ func (c *Client) FetchAllEmployees(ctx context.Context) ([]models.Employee, erro
 			queryParams.Set("continuationToken", currentContinuationToken)
 		}
 		queryParams.Set("include", "All")
-		queryParams.Set("pageSize", "100")
 
 		log.Printf("DEBUG: [PaycorClient] Fetching page %d for employees (LE ID %s) with token: %s...",
 			pageCount, c.cfg.PaycorLegalEntityID, safeSubstring(currentContinuationToken, 10))
@@ -189,10 +188,10 @@ func (c *Client) FetchAllEmployees(ctx context.Context) ([]models.Employee, erro
 			return nil, fmt.Errorf("unmarshaling employees response for page %d (LE ID %s): %w", pageCount, c.cfg.PaycorLegalEntityID, err)
 		}
 
-		if len(empResponse.Items) > 0 {
-			allEmployees = append(allEmployees, empResponse.Items...)
+		if len(empResponse.Records) > 0 {
+			allEmployees = append(allEmployees, empResponse.Records...)
 			log.Printf("INFO: [PaycorClient] Fetched %d employees this page (%d total) for LE ID %s.",
-				len(empResponse.Items), len(allEmployees), c.cfg.PaycorLegalEntityID)
+				len(empResponse.Records), len(allEmployees), c.cfg.PaycorLegalEntityID)
 		} else {
 			log.Printf("INFO: [PaycorClient] Fetched 0 employees on page %d for LE ID %s. This might indicate end of data or an issue.", pageCount, c.cfg.PaycorLegalEntityID)
 		}
