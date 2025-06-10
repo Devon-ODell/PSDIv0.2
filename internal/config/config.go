@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 )
 
 type PaycorConfig struct {
@@ -56,15 +57,22 @@ type AppConfig struct {
 // Load loads configuration from environment variables.
 // For this focused task, it primarily loads Paycor config.
 func Load() (*AppConfig, error) {
+	// Read the PAYCOR_SCOPES environment variable and split it into a slice.
+	scopesString := getEnv("PAYCOR_SCOPES", "") // Read the new variable
+	var scopes []string
+	if scopesString != "" {
+		scopes = strings.Split(scopesString, ",")
+	}
 	cfg := &AppConfig{
 		Paycor: PaycorConfig{
 			PaycorClientID:               getEnv("PAYCOR_CLIENT_ID", ""),
 			PaycorClientSecret:           getEnv("PAYCOR_CLIENT_SECRET", ""),
-			PaycorOcpApimSubscriptionKey: getEnv("PAYCOR_SUBSCRIPTION_KEY", ""),
+			PaycorOcpApimSubscriptionKey: getEnv("PAYCOR_OCP_APIM_SUBSCRIPTION_KEY", ""),
 			PaycorRefreshToken:           getEnv("PAYCOR_REFRESH_TOKEN", ""),
-			PaycorTokenURLBase:           getEnv("PAYCOR_TOKEN_BASE_URL", ""),
-			PaycorAPIBaseURL:             getEnv("PAYCOR_BASE_URL", ""),
+			PaycorTokenURLBase:           getEnv("PAYCOR_TOKEN_URL_BASE", ""),
+			PaycorAPIBaseURL:             getEnv("PAYCOR_API_BASE_URL", ""),
 			PaycorLegalEntityID:          getEnv("PAYCOR_LEGAL_ENTITY_ID", ""),
+			PaycorScopes:                 scopes, // Use the split scopes
 		},
 
 		Jira: JiraConfig{

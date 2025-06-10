@@ -9,12 +9,20 @@ import (
 	"os"
 	"time"
 
+	// Import the new godotenv package
+	"github.com/joho/godotenv"
 	// Use your project's actual module path for internal packages
 	"github.com/Devon-ODell/PSDIv0.2/internal/config"
 	"github.com/Devon-ODell/PSDIv0.2/internal/paycor"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		// This is not a fatal error, as env vars could be set directly in the OS.
+		log.Println("INFO: No .env file found, relying on OS environment variables.")
+	}
+
 	// Setup logger
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 	log.Println("INFO: Starting Paycor data extraction process...")
@@ -55,7 +63,7 @@ func main() {
 	log.Printf("INFO: Employee data successfully marshalled to JSON (%d bytes).", len(jsonData))
 
 	// --- Step 3: Save JSON data to a file ---
-	outputFilePath := cfg.LogFilePath
+	outputFilePath := "paycor_employees.json" // Default output file path
 	log.Printf("INFO: Attempting to save JSON data to file: %s", outputFilePath)
 	err = os.WriteFile(outputFilePath, jsonData, 0644) // rw-r--r-- permissions
 	if err != nil {
