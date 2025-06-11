@@ -1,3 +1,16 @@
+package jira
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+
+	"github.com/Devon-ODell/PSDIv0.2/internal/models"
+)
+
 // FindObjectsByAQL fetches objects from Jira Assets using a given AQL query.
 func (c *Client) FindObjectsByAQL(ctx context.Context, aql string) ([]models.JiraObject, error) {
 	queryParams := url.Values{}
