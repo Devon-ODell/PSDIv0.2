@@ -6,4 +6,4 @@ toolchain go1.23.9
 
 require golang.org/x/oauth2 v0.30.0
 
-require github.com/joho/godotenv v1.5.1 // indirect
+require github.com/joho/godotenv v1.5.1

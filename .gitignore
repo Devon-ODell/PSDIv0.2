@@ -29,6 +29,7 @@ ld directory (if you use one)
 
 # Output files from the current PSDI project (example)
 output/
+paycor_employees.json
 
 
 # Debugger files (e.g., Delve)

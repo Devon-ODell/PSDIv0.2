@@ -3,7 +3,9 @@
 package jira
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -36,7 +38,7 @@ func NewClient(cfg config.JiraConfig) (*Client, error) {
 }
 
 // GetAllEmployeeAssets fetches all objects of the configured Employee type from Jira Assets.
-func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAsset, error) {
+func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAssets, error) {
 	// Construct the AQL (Assets Query Language) query to find all "Employee" objects.
 	// We use the configured object type name to make it flexible.
 	aql := fmt.Sprintf(`objectType = "%s"`, c.cfg.JiraEmployeeObjectTypeName)
@@ -91,5 +93,107 @@ func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAss
 	// to the []models.EmployeeAsset slice. This will involve creating structs that
 	// mirror Jira's JSON response and iterating through the results.
 
-	return []models.EmployeeAsset{}, nil // Return an empty slice for now
+	return []models.EmployeeAssets{}, nil // Return an empty slice for now
 }
+
+// Creating an employee asset in Jira
+func (c *Client) CreateEmployeeAsset(ctx context.Context, objectTypeId string, employee models.EmployeeAssets) (string, error) { // Returns {
+	// Construct the API URL for creating a new object in Jira Assets
+	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
+	if err != nil {
+		return "", fmt.Errorf("invalid Jira site name: %w", err)
+	}
+	apiURL = apiURL.JoinPath(
+		"rest/assets/1.0/object",
+	)
+
+	reqBody := map[string]interface{}{
+		"objectTypeId": objectTypeId,
+		"attributes":   employee.Attributes, // Assuming employee has an Attributes field
+	}
+
+	reqBodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), bytes.NewBuffer(reqBodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create Jira API request: %w", err)
+	}
+
+	req.SetBasicAuth(c.cfg.JiraAdminEmail, c.cfg.JiraOrgAPIKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Printf("INFO: [JiraClient] Creating employee asset for object type ID: %s", objectTypeId)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute Jira API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("Jira API returned non-201 status: %s, body: %s", resp.Status, string(bodyBytes))
+	}
+
+	var responseData struct {
+		ObjectID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		return "", fmt.Errorf("failed to decode Jira API response: %w", err)
+	}
+
+	log.Printf("INFO: [JiraClient] Successfully created employee asset with ID: %s", responseData.ObjectID)
+	return responseData.ObjectID, nil
+}
+
+func (c *Client) UpdateEmployeeAsset(ctx context.Context, objectID string, employee models.EmployeeAssets) error {
+	// Construct the API URL for updating an existing object in Jira Assets
+	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
+	if err != nil {
+		return fmt.Errorf("invalid Jira site name: %w", err)
+	}
+	apiURL = apiURL.JoinPath(
+		"rest/assets/1.0/object", objectID,
+	)
+
+	reqBody := map[string]interface{}{
+		"attributes": employee.Attributes, // Assuming employee has an Attributes field
+	}
+
+	reqBodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, apiURL.String(), bytes.NewBuffer(reqBodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create Jira API request: %w", err)
+	}
+
+	req.SetBasicAuth(c.cfg.JiraAdminEmail, c.cfg.JiraOrgAPIKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Printf("INFO: [JiraClient] Updating employee asset with ID: %s", objectID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute Jira API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Jira API returned non-200 status: %s, body: %s", resp.Status, string(bodyBytes))
+	}
+
+	log.Printf("INFO: [JiraClient] Successfully updated employee asset with ID: %s", objectID)
+	return nil
+}
+
+// Assuming PaycorEmployee is the struct type for data fetched from Paycor.
+//func (c *Client) SyncEmployeesToJira(models.Employee, schemaID string, employeeObjectTypeId string) (models.EmployeeAssets, error)
