@@ -47,15 +47,8 @@ type AppConfig struct {
 	LogFilePath string
 }
 
-// JiraConfig (placeholder for modularity)
-// type JiraConfig struct {
-// 	BaseURL  string
-// 	APIToken string
-// 	// ... other Jira specific configs
-// }
-
-// Load loads configuration from environment variables.
-// For this focused task, it primarily loads Paycor config.
+// Load loads
+// For this focused task, it primarily loads
 func Load() (*AppConfig, error) {
 	// Read the PAYCOR_SCOPES environment variable and split it into a slice.
 	scopesString := getEnv("PAYCOR_SCOPES", "") // Read the new variable
@@ -83,6 +76,8 @@ func Load() (*AppConfig, error) {
 			JiraAssetsURL:                 getEnv("JIRA_ASSETS_URL", ""),
 			JiraObjectSchemaKey:           getEnv("JIRA_OBJECT_SCHEMA_KEY", ""),
 			JiraAssetObjectKeyCustomField: getEnv("JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID", ""),
+			JiraEmployeeObjectTypeName:    getEnv("JIRA_EMPLOYEE_OBJECT_TYPE_NAME", "Employees"), // Default to "Employees"
+			JiraEmployeeObjectTypeID:      getEnv("JIRA_EMPLOYEE_OBJECT_TYPE_ID", ""),
 		},
 		// Initialize other AppConfig fields
 		// DatabaseURL: getEnv("DATABASE_URL", ""),
@@ -130,6 +125,12 @@ func Load() (*AppConfig, error) {
 	}
 	if cfg.Jira.JiraAssetObjectKeyCustomField == "" {
 		log.Println("CONFIG WARNING: JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID environment variable is not set.")
+	}
+	if cfg.Jira.JiraEmployeeObjectTypeName == "" {
+		log.Println("CONFIG WARNING: JIRA_EMPLOYEE_OBJECT_TYPE_NAME environment variable is not set, defaulting to 'Employees'.")
+	}
+	if cfg.Jira.JiraEmployeeObjectTypeID == "" {
+		log.Println("CONFIG WARNING: JIRA_EMPLOYEE_OBJECT_TYPE_ID environment variable is not set.")
 	}
 
 	return cfg, nil

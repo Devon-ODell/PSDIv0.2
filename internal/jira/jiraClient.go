@@ -3,7 +3,6 @@
 package jira
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,14 +42,15 @@ func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAss
 	// We use the configured object type name to make it flexible.
 	aql := fmt.Sprintf(`objectType = "%s"`, c.cfg.JiraEmployeeObjectTypeName)
 
-	// Jira Assets search endpoint
-	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
+	apiURL, err := url.Parse(c.cfg.JiraAssetsURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Jira site name: %w", err)
+		// Now using the full URL from config, so this validates it.
+		return nil, fmt.Errorf("invalid Jira Assets URL from config: %w", err)
 	}
-	apiURL = apiURL.JoinPath(
-		"rest/assets/1.0/aql/objects",
-	)
+
+	// Append the specific path for AQL queries
+	apiURL = apiURL.JoinPath("aql/objects") // Correct path relative to the v1 base
+	// --- END: MODIFICATION ---
 
 	q := apiURL.Query()
 	q.Set("aql", aql)
@@ -96,104 +96,28 @@ func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAss
 	return []models.EmployeeAssets{}, nil // Return an empty slice for now
 }
 
-// Creating an employee asset in Jira
-func (c *Client) CreateEmployeeAsset(ctx context.Context, objectTypeId string, employee models.EmployeeAssets) (string, error) { // Returns {
-	// Construct the API URL for creating a new object in Jira Assets
-	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
+// FindObjectsByAQL fetches objects from Jira Assets using a given AQL query.
+func (c *Client) FindObjectsByAQL(ctx context.Context, aql string) ([]models.JiraObject, error) {
+	queryParams := url.Values{}
+	queryParams.Set("aql", aql)
+	queryParams.Set("resultsPerPage", "100")
+
+	body, statusCode, err := c.makeAPIRequest(ctx, http.MethodGet, "aql/objects", queryParams, nil)
 	if err != nil {
-		return "", fmt.Errorf("invalid Jira site name: %w", err)
-	}
-	apiURL = apiURL.JoinPath(
-		"rest/assets/1.0/object",
-	)
-
-	reqBody := map[string]interface{}{
-		"objectTypeId": objectTypeId,
-		"attributes":   employee.Attributes, // Assuming employee has an Attributes field
+		return nil, err
 	}
 
-	reqBodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("Jira API returned non-200 status for AQL query: %d, body: %s", statusCode, string(body))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), bytes.NewBuffer(reqBodyBytes))
-	if err != nil {
-		return "", fmt.Errorf("failed to create Jira API request: %w", err)
+	var response struct {
+		Entries []models.JiraObject `json:"objectEntries"`
 	}
 
-	req.SetBasicAuth(c.cfg.JiraAdminEmail, c.cfg.JiraOrgAPIKey)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	log.Printf("INFO: [JiraClient] Creating employee asset for object type ID: %s", objectTypeId)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to execute Jira API request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("Jira API returned non-201 status: %s, body: %s", resp.Status, string(bodyBytes))
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal AQL response: %w. Body: %s", err, string(body))
 	}
 
-	var responseData struct {
-		ObjectID string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return "", fmt.Errorf("failed to decode Jira API response: %w", err)
-	}
-
-	log.Printf("INFO: [JiraClient] Successfully created employee asset with ID: %s", responseData.ObjectID)
-	return responseData.ObjectID, nil
+	return response.Entries, nil
 }
-
-func (c *Client) UpdateEmployeeAsset(ctx context.Context, objectID string, employee models.EmployeeAssets) error {
-	// Construct the API URL for updating an existing object in Jira Assets
-	apiURL, err := url.Parse(fmt.Sprintf("https://%s", c.cfg.JiraSiteName))
-	if err != nil {
-		return fmt.Errorf("invalid Jira site name: %w", err)
-	}
-	apiURL = apiURL.JoinPath(
-		"rest/assets/1.0/object", objectID,
-	)
-
-	reqBody := map[string]interface{}{
-		"attributes": employee.Attributes, // Assuming employee has an Attributes field
-	}
-
-	reqBodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, apiURL.String(), bytes.NewBuffer(reqBodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create Jira API request: %w", err)
-	}
-
-	req.SetBasicAuth(c.cfg.JiraAdminEmail, c.cfg.JiraOrgAPIKey)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	log.Printf("INFO: [JiraClient] Updating employee asset with ID: %s", objectID)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute Jira API request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Jira API returned non-200 status: %s, body: %s", resp.Status, string(bodyBytes))
-	}
-
-	log.Printf("INFO: [JiraClient] Successfully updated employee asset with ID: %s", objectID)
-	return nil
-}
-
-// Assuming PaycorEmployee is the struct type for data fetched from Paycor.
-//func (c *Client) SyncEmployeesToJira(models.Employee, schemaID string, employeeObjectTypeId string) (models.EmployeeAssets, error)

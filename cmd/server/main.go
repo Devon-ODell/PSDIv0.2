@@ -3,116 +3,218 @@ package main
 import (
 	"context"
 	"encoding/json"
-
-	//"fmt"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	// Import the new godotenv package
 	"github.com/joho/godotenv"
+
 	// Use your project's actual module path for internal packages
 	"github.com/Devon-ODell/PSDIv0.2/internal/config"
+	"github.com/Devon-ODell/PSDIv0.2/internal/jira"   // <-- IMPORT for Jira client
+	"github.com/Devon-ODell/PSDIv0.2/internal/models" // <-- IMPORT for shared data models
 	"github.com/Devon-ODell/PSDIv0.2/internal/paycor"
 )
 
 func main() {
+	// Load .env file. Not fatal if it doesn't exist.
 	err := godotenv.Load()
 	if err != nil {
-		// This is not a fatal error, as env vars could be set directly in the OS.
 		log.Println("INFO: No .env file found, relying on OS environment variables.")
 	}
 
 	// Setup logger
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	log.Println("INFO: Starting Paycor data extraction process...")
+	log.Println("INFO: Starting Paycor data extraction and Jira sync process...")
 
-	// Load configuration
-	cfg, err := config.Load() // This now primarily loads cfg.Paycor
+	// =========================================================================
+	// Configuration Loading
+	// =========================================================================
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
 	}
 	log.Println("INFO: Configuration loaded successfully.")
-	log.Printf("DEBUG: Paycor Config: ClientID=%s..., APIBaseURL=%s, LegalEntityID=%s, OutputFile=%s",
-		safeSubstring(cfg.Paycor.PaycorClientID, 5), cfg.Paycor.PaycorAPIBaseURL, cfg.Paycor.PaycorLegalEntityID, cfg.LogFilePath)
 
+	// Create a background context for our API calls
+	ctx := context.Background()
+
+	// =========================================================================
+	// Paycor Data Extraction
+	// =========================================================================
 	// Initialize Paycor client
-	// Pass the Paycor-specific config struct to the client
-	paycorClient, err := paycor.NewClient(context.Background(), cfg.Paycor)
+	paycorClient, err := paycor.NewClient(ctx, cfg.Paycor)
 	if err != nil {
 		log.Fatalf("FATAL: Failed to initialize Paycor client: %v", err)
 	}
 	log.Println("INFO: Paycor client initialized successfully.")
 
-	// --- Step 1: Fetch Employees from Paycor ---
+	// Fetch all employees from Paycor
 	log.Println("INFO: Attempting to fetch all employees from Paycor...")
 	startTime := time.Now()
-	employees, err := paycorClient.FetchAllEmployees(context.Background())
+	employees, err := paycorClient.FetchAllEmployees(ctx)
 	if err != nil {
 		log.Fatalf("FATAL: Failed to fetch employees from Paycor: %v", err)
 	}
 	duration := time.Since(startTime)
 	log.Printf("INFO: Successfully fetched %d employees from Paycor in %v.", len(employees), duration)
 
-	// --- Step 2: Marshal employee data to JSON ---
-	log.Println("INFO: Marshalling employee data to JSON...")
-	jsonData, err := json.MarshalIndent(employees, "", "  ") // Pretty print JSON
-	if err != nil {
-		log.Fatalf("FATAL: Failed to marshal employee data to JSON: %v", err)
+	// If no employees are found, there's nothing to sync. Exit gracefully.
+	if len(employees) == 0 {
+		log.Println("INFO: No employees found in Paycor. Nothing to sync to Jira. Exiting.")
+		return
 	}
-	log.Printf("INFO: Employee data successfully marshalled to JSON (%d bytes).", len(jsonData))
 
-	// --- Step 3: Save JSON data to a file ---
-	outputFilePath := "paycor_employees.json" // Default output file path
-	log.Printf("INFO: Attempting to save JSON data to file: %s", outputFilePath)
-	err = os.WriteFile(outputFilePath, jsonData, 0644) // rw-r--r-- permissions
+	// Optional: Save the fetched data to a local JSON file for debugging
+	saveDataToFile("paycor_employees.json", employees)
+
+	// =========================================================================
+	// Jira Integration and Syncing
+	// =========================================================================
+	log.Println("INFO: Beginning Jira integration phase...")
+
+	// 1. Initialize Jira Client using the Jira-specific config
+	jiraClient, err := jira.NewClient(cfg.Jira)
 	if err != nil {
-		log.Fatalf("FATAL: Failed to write JSON data to file '%s': %v", outputFilePath, err)
+		log.Fatalf("FATAL: Failed to initialize Jira client: %v", err)
 	}
-	log.Printf("SUCCESS: Employee data successfully saved to %s", outputFilePath)
+	log.Println("INFO: Jira client initialized successfully.")
 
-	// --- (Detached) Placeholder for Jira Integration ---
-	// This section is for conceptual planning and will not be executed in this flow.
-	/*
-	   log.Println("INFO: (Placeholder) Beginning Jira integration phase...")
+	// 2. Fetch all existing Employee Assets from Jira
+	// This is done once to avoid making a request for every single employee in the loop.
+	log.Println("INFO: Fetching all existing employee assets from Jira for comparison...")
+	existingJiraAssets, err := jiraClient.GetAllEmployeeAssets(ctx)
+	if err != nil {
+		log.Fatalf("FATAL: Failed to get employee assets from Jira: %v", err)
+	}
+	log.Printf("INFO: Found %d existing employee assets in Jira.", len(existingJiraAssets))
 
-	   // 1. Initialize Jira Client (would require JiraConfig)
-	   // jiraCfg := cfg.Jira // Assuming JiraConfig is part of the main Config struct
-	   // jiraClient, err := jira.NewClient(jiraCfg)
-	   // if err != nil {
-	   //     log.Fatalf("FATAL: Failed to initialize Jira client: %v", err)
-	   // }
-	   // log.Println("INFO: (Placeholder) Jira client initialized.")
+	// 3. Create a map for efficient lookups using the employee's email as a unique key.
+	jiraAssetsMap := make(map[string]models.EmployeeAssets)
+	for _, asset := range existingJiraAssets {
+		// This is the correct way to get the email
+		if email := findEmailInAttributes(asset.Attributes); email != "" {
+			jiraAssetsMap[email] = asset
+		}
+	}
 
-	   // 2. Process each Paycor employee and interact with Jira
-	   // for _, emp := range employees {
-	   //     log.Printf("INFO: (Placeholder) Processing employee ID %s for Jira sync...", emp.ID)
-	   //
-	   //     // Example: Map Paycor employee data to Jira issue fields
-	   //     // jiraIssueData := mapPaycorToJira(emp)
-	   //
-	   //     // Example: Check if asset exists in Jira, then create or update
-	   //     // assetExists, err := jiraClient.CheckAssetExists(emp.ID) // Hypothetical method
-	   //     // if err != nil {
-	   //     //     log.Printf("ERROR: (Placeholder) Failed to check Jira asset for employee %s: %v", emp.ID, err)
-	   //     //     continue
-	   //     // }
-	   //
-	   //     // if assetExists {
-	   //     //     err = jiraClient.UpdateAsset(emp.ID, jiraIssueData) // Hypothetical method
-	   //     // } else {
-	   //     //     err = jiraClient.CreateAsset(jiraIssueData) // Hypothetical method
-	   //     // }
-	   //     // if err != nil {
-	   //     //     log.Printf("ERROR: (Placeholder) Failed to sync employee %s to Jira: %v", emp.ID, err)
-	   //     // } else {
-	   //     //     log.Printf("INFO: (Placeholder) Successfully synced employee %s to Jira.", emp.ID)
-	   //     // }
-	   // }
-	   // log.Println("INFO: (Placeholder) Jira integration phase completed.")
-	*/
+	// 4. Loop through Paycor employees and sync to Jira
+	log.Println("INFO: Starting sync process for each Paycor employee...")
+	for _, emp := range employees {
+		log.Printf("INFO: Processing Paycor employee: %s %s (Email: %s)", emp.FirstName, emp.LastName, emp.Email.EmailAddress)
 
-	log.Println("INFO: Paycor data extraction process finished successfully. Exiting.")
+		// Map Paycor data to the structure Jira expects
+		jiraAssetData := mapPaycorToJiraAsset(emp)
+
+		// Check if an asset with this email already exists in our map
+		existingAsset, exists := jiraAssetsMap[emp.Email.EmailAddress]
+
+		if exists {
+			// UPDATE: The asset already exists, so we update it.
+			log.Printf("INFO: Employee exists in Jira. Updating asset ID %s.", existingAsset.ID)
+			err = jiraClient.UpdateEmployeeAsset(ctx, existingAsset.ID, jiraAssetData)
+			if err != nil {
+				log.Printf("ERROR: Failed to update Jira asset for employee %s: %v", emp.ID, err)
+			} else {
+				log.Printf("SUCCESS: Successfully updated Jira asset for employee %s.", emp.ID)
+			}
+		} else {
+			// CREATE: The asset does not exist, so we create a new one.
+			log.Println("INFO: Employee does not exist in Jira. Creating new asset.")
+			newAssetID, err := jiraClient.CreateEmployeeAsset(ctx, cfg.Jira.JiraEmployeeObjectTypeID, jiraAssetData)
+			if err != nil {
+				log.Printf("ERROR: Failed to create Jira asset for employee %s: %v", emp.ID, err)
+			} else {
+				log.Printf("SUCCESS: Successfully created new Jira asset for employee %s with ID %s.", emp.ID, newAssetID)
+			}
+		}
+	}
+
+	log.Println("INFO: Jira integration phase completed.")
+	log.Println("INFO: Process finished successfully. Exiting.")
+}
+
+// mapPaycorToJiraAsset converts a Paycor employee object to the Jira EmployeeAssets model.
+// !!! IMPORTANT !!!
+// You MUST customize the map keys (e.g., "Name", "First Name", "Last Name") to match
+//
+// mapPaycorToJiraAsset converts a Paycor employee object to the Jira EmployeeAssets model.
+// This function now builds the correct []AssetAttribute slice structure.
+func mapPaycorToJiraAsset(employee models.Employee) models.EmployeeAssets {
+	// !!! IMPORTANT !!!
+	// The 'ObjectTypeAttributeID' values below (e.g., "1086", "1093") are based on the
+	// 'jiraAssetMap.go' file you provided. You MUST verify these IDs are correct
+	// for your specific Jira Assets schema. You can find them in the Jira UI
+	// when configuring your object schema.
+	return models.EmployeeAssets{
+		Attributes: []models.AssetAttribute{
+			{
+				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Name"]), // "1086"
+				Values: []models.Value{
+					{Value: fmt.Sprintf("%s %s", employee.FirstName, employee.LastName)},
+				},
+			},
+			{
+				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Email"]), // "1093"
+				Values: []models.Value{
+					{Value: employee.Email.EmailAddress},
+				},
+			},
+			{
+				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Start Date"]), // "1095"
+				Values: []models.Value{
+					{Value: employee.EmploymentDateData.HireDate},
+				},
+			},
+			{
+				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Status"]), // "1096"
+				Values: []models.Value{
+					// This assumes you have a selectable status of "Active" in Jira.
+					{Value: "Active"},
+				},
+			},
+			{
+				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Job Role"]), // "1091"
+				Values: []models.Value{
+					{Value: employee.PositionData.JobTitle},
+				},
+			},
+		},
+	}
+}
+
+// findEmailInAttributes is a helper function to locate an email value within the Attributes slice.
+func findEmailInAttributes(attributes []models.AssetAttribute) string {
+	// Get the static ID for the "Email" attribute from our map
+	emailAttributeID := strconv.Itoa(models.AttributeID["Email"])
+
+	for _, attr := range attributes {
+		if attr.ObjectTypeAttributeID == emailAttributeID {
+			if len(attr.Values) > 0 {
+				return attr.Values[0].Value
+			}
+		}
+	}
+	return ""
+}
+
+// saveDataToFile is a helper function to write data to a file for debugging.
+func saveDataToFile(filePath string, data interface{}) {
+	log.Printf("INFO: Attempting to save data to file: %s", filePath)
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		log.Printf("WARN: Failed to marshal data to JSON for saving: %v", err)
+		return
+	}
+	err = os.WriteFile(filePath, jsonData, 0644)
+	if err != nil {
+		log.Printf("WARN: Failed to write data to file '%s': %v", filePath, err)
+	} else {
+		log.Printf("INFO: Data successfully saved to %s", filePath)
+	}
 }
 
 func safeSubstring(s string, length int) string {
@@ -121,13 +223,3 @@ func safeSubstring(s string, length int) string {
 	}
 	return s[:length]
 }
-
-// Placeholder for mapping function if you were to integrate with Jira
-// func mapPaycorToJira(employee paycor.Employee) map[string]interface{} {
-//     // Implementation would depend on your Jira setup and desired field mappings
-//     return map[string]interface{}{
-//         "summary": fmt.Sprintf("%s %s (%s)", employee.FirstName, employee.LastName, employee.ID),
-//         "customfield_XXXXX": employee.WorkEmail, // Example custom field
-//         // ... other fields
-//     }
-// }
