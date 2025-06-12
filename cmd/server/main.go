@@ -124,7 +124,7 @@ func main() {
 		} else {
 			// CREATE: The asset does not exist, so we create a new one.
 			log.Println("INFO: Employee does not exist in Jira. Creating new asset.")
-			newAssetID, err := jiraClient.CreateEmployeeAsset(ctx, cfg.Jira.JiraEmployeeObjectTypeID, jiraAssetData)
+			newAssetID, err := jiraClient.CreateEmployeeAsset(ctx, jiraAssetData)
 			if err != nil {
 				log.Printf("ERROR: Failed to create Jira asset for employee %s: %v", emp.ID, err)
 			} else {

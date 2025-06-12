@@ -89,11 +89,21 @@ func (c *Client) GetAllEmployeeAssets(ctx context.Context) ([]models.EmployeeAss
 	log.Printf("INFO: [JiraClient] Successfully received data from Jira. Body length: %d bytes", len(bodyBytes))
 	log.Printf("DEBUG: [JiraClient] Response Body: %s", string(bodyBytes))
 
-	// TODO: Implement the unmarshalling and mapping from the Jira API response
-	// to the []models.EmployeeAsset slice. This will involve creating structs that
-	// mirror Jira's JSON response and iterating through the results.
+	// 1. Define a struct that matches the Jira AQL response structure.
+	type JiraAQLResponse struct {
+		Entries []models.EmployeeAssets `json:"objectEntries"`
+	}
 
-	return []models.EmployeeAssets{}, nil // Return an empty slice for now
+	// 2. Unmarshal the response body into this new struct.
+	var jiraResponse JiraAQLResponse
+	if err := json.Unmarshal(bodyBytes, &jiraResponse); err != nil {
+		log.Printf("ERROR: [JiraClient] Failed to unmarshal Jira response: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal jira response: %w", err)
+	}
+
+	// 3. Return the entries from the parsed response.
+	log.Printf("INFO: [JiraClient] Successfully unmarshalled %d employee assets from Jira.", len(jiraResponse.Entries))
+	return jiraResponse.Entries, nil
 }
 
 // FindObjectsByAQL fetches objects from Jira Assets using a given AQL query.
