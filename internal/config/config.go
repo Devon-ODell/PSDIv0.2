@@ -28,6 +28,8 @@ type JiraConfig struct {
 	JiraObjectSchemaKey        string // "HRITBETA"
 	JiraEmployeeObjectTypeName string // Name of the Employee Object Type in Assets, e.g., "Employee"
 	JiraEmployeeObjectTypeID   string // Discovered or set via env for "Employee" type
+	JiraRoleObjectTypeName     string
+	JiraRoleObjectTypeID       string
 
 	// Jira Issue Creation & Linking Configuration
 	JiraTestProjectKey            string // Project key for creating linked Jira issues (e.g., "TEST")
@@ -78,6 +80,8 @@ func Load() (*AppConfig, error) {
 			JiraAssetObjectKeyCustomField: getEnv("JIRA_ASSET_OBJECT_KEY_CUSTOM_FIELD_ID", ""),
 			JiraEmployeeObjectTypeName:    getEnv("JIRA_EMPLOYEE_OBJECT_TYPE_NAME", "Employees"), // Default to "Employees"
 			JiraEmployeeObjectTypeID:      getEnv("JIRA_EMPLOYEE_OBJECT_TYPE_ID", ""),
+			JiraRoleObjectTypeName:        getEnv("JIRA_ROLE_OBJECT_TYPE_NAME", "Role"),
+			JiraRoleObjectTypeID:          getEnv("JIRA_ROLE_OBJECT_TYPE_ID", ""),
 		},
 		// Initialize other AppConfig fields
 		// DatabaseURL: getEnv("DATABASE_URL", ""),
@@ -132,6 +136,13 @@ func Load() (*AppConfig, error) {
 	if cfg.Jira.JiraEmployeeObjectTypeID == "" {
 		log.Println("CONFIG WARNING: JIRA_EMPLOYEE_OBJECT_TYPE_ID environment variable is not set.")
 	}
+	if cfg.Jira.JiraRoleObjectTypeName == "" {
+		log.Println("CONFIG WARNING: JIRA_ROLE_OBJECT_TYPE_NAME environment variable is not set, defaulting to 'Role'.")
+	}
+	if cfg.Jira.JiraRoleObjectTypeID == "" {
+		log.Println("CONFIG WARNING: JIRA_ROLE_OBJECT_TYPE_ID environment variable is not set.")
+	}
+	// Add more validation as needed for other fields
 
 	return cfg, nil
 }

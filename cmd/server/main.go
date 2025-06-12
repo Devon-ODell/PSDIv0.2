@@ -106,8 +106,17 @@ func main() {
 	for _, emp := range employees {
 		log.Printf("INFO: Processing Paycor employee: %s %s (Email: %s)", emp.FirstName, emp.LastName, emp.Email.EmailAddress)
 
+		roleKey, err := jiraClient.FindOrCreateRole(ctx, emp.PositionData.JobTitle)
+		if err != nil {
+			log.Printf("ERROR: Could not find or create Jira Role for '%s'. Skipping this employee. Error: %v", emp.PositionData.JobTitle, err)
+			continue // Skip to the next employee
+		}
+		if roleKey == "" {
+			log.Printf("WARN: No role key was found or created for job title '%s'. The 'Job Role' field will be empty.", emp.PositionData.JobTitle)
+		}
+
 		// Map Paycor data to the structure Jira expects
-		jiraAssetData := mapPaycorToJiraAsset(emp)
+		jiraAssetData := mapPaycorToJiraAsset(emp, roleKey)
 
 		// Check if an asset with this email already exists in our map
 		existingAsset, exists := jiraAssetsMap[emp.Email.EmailAddress]
@@ -143,7 +152,7 @@ func main() {
 //
 // mapPaycorToJiraAsset converts a Paycor employee object to the Jira EmployeeAssets model.
 // This function now builds the correct []AssetAttribute slice structure.
-func mapPaycorToJiraAsset(employee models.Employee) models.EmployeeAssets {
+func mapPaycorToJiraAsset(employee models.Employee, roleKey string) models.EmployeeAssets {
 	// !!! IMPORTANT !!!
 	// The 'ObjectTypeAttributeID' values below (e.g., "1086", "1093") are based on the
 	// 'jiraAssetMap.go' file you provided. You MUST verify these IDs are correct
@@ -179,7 +188,7 @@ func mapPaycorToJiraAsset(employee models.Employee) models.EmployeeAssets {
 			{
 				ObjectTypeAttributeID: strconv.Itoa(models.AttributeID["Job Role"]), // "1091"
 				Values: []models.Value{
-					{Value: employee.PositionData.JobTitle},
+					{Value: roleKey},
 				},
 			},
 		},
