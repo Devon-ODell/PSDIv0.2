@@ -139,6 +139,11 @@ func (c *Client) FindObjectsByAQL(ctx context.Context, aql string) ([]models.Emp
 		return nil, err
 	}
 
+	// Log the raw response body from Jira for diagnosis
+	log.Printf("DEBUG: [FindObjectsByAQL] AQL Query: %s", aql)
+	log.Printf("DEBUG: [FindObjectsByAQL] Raw Response Body: %s", string(body))
+	// --- END DEBUG LOGGING ---
+
 	if statusCode != http.StatusOK {
 		return nil, fmt.Errorf("Jira API returned non-200 status for AQL query: %d, body: %s", statusCode, string(body))
 	}
@@ -154,29 +159,42 @@ func (c *Client) FindObjectsByAQL(ctx context.Context, aql string) ([]models.Emp
 	return response.Entries, nil
 }
 
+// REVISED FindOrCreateRole with verification logic
 func (c *Client) FindOrCreateRole(ctx context.Context, roleName string) (string, error) {
 	if roleName == "" {
 		return "", nil
 	}
 
-	// Ensure this line uses "Label" as shown below
-	aql := fmt.Sprintf(`objectType = "%s" AND Label = "%s"`, c.cfg.JiraRoleObjectTypeName, roleName)
+	aql := fmt.Sprintf(`objectType = "%s" AND "Name" = "%s"`, c.cfg.JiraRoleObjectTypeName, roleName)
 
-	existingRoles, err := c.FindObjectsByAQL(ctx, aql)
+	existingAssets, err := c.FindObjectsByAQL(ctx, aql)
 	if err != nil {
 		return "", fmt.Errorf("error searching for role '%s': %w", roleName, err)
 	}
 
-	if len(existingRoles) > 0 {
-		log.Printf("INFO: [JiraMethods] Found existing role '%s' with key %s", roleName, existingRoles[0].ObjectKey)
-		return existingRoles[0].ObjectKey, nil
+	// NEW: Verify the results from the AQL query.
+	// Do not trust the API blindly; check that the returned object is actually a Role.
+	for _, asset := range existingAssets {
+		if asset.ObjectType.Name == c.cfg.JiraRoleObjectTypeName {
+			log.Printf("INFO: [JiraMethods] Verified and found existing role '%s' with key %s", roleName, asset.ObjectKey)
+			return asset.ObjectKey, nil // Found a valid role, return its key.
+		} else {
+			// This log will fire if the AQL query is still misbehaving.
+			log.Printf("WARN: [JiraMethods] AQL query for Roles returned an object of the WRONG TYPE. Got ObjectKey: %s, Type: '%s'. Expected Type: '%s'. Discarding this result.", asset.ObjectKey, asset.ObjectType.Name, c.cfg.JiraRoleObjectTypeName)
+		}
 	}
 
-	log.Printf("INFO: [JiraMethods] Role '%s' not found, creating new asset.", roleName)
+	// If no valid role was found in the loop, create a new one.
+	log.Printf("INFO: [JiraMethods] No valid role '%s' found. Creating new asset.", roleName)
 	newRole, err := c.CreateRoleAsset(ctx, roleName)
 	if err != nil {
 		return "", fmt.Errorf("failed to create new role asset for '%s': %w", roleName, err)
 	}
+	if newRole == nil {
+		return "", fmt.Errorf("creation of role '%s' returned a nil object", roleName)
+	}
+
+	log.Printf("SUCCESS: [JiraMethods] Successfully created new role '%s' with key %s.", roleName, newRole.ObjectKey)
 	return newRole.ObjectKey, nil
 }
 
